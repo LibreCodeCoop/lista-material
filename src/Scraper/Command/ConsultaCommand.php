@@ -7,6 +7,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Command\Command;
 use Goutte\Client;
 use Symfony\Component\DomCrawler\Crawler;
+use Symfony\Component\Console\Input\InputOption;
 
 class ConsultaCommand extends Command
 {
@@ -47,12 +48,17 @@ class ConsultaCommand extends Command
      * @var Crawler
      */
     private $crawlerListaMaterial;
-    private $fileHandle;
+    private $fileHandle = [];
+    private $cidades = [];
+    private $instituicoes = [];
     protected function configure()
     {
         $this
             ->setName('consulta')
             ->setDescription('Realiza consulta de material escolar.')
+            ->setDefinition([
+                new InputOption('uf', null, InputOption::VALUE_REQUIRED + InputOption::VALUE_IS_ARRAY, 'Lista de UF separados por vírgula', $this->estados)
+            ])
             ->setHelp(<<<HELP
                 O comando <info>consulta</info> realiza consulta de empresa.
                 HELP
@@ -62,66 +68,60 @@ class ConsultaCommand extends Command
 
     public function execute(InputInterface $input, OutputInterface $output)
     {
+        $listaUF = $input->getOption('uf');
+        $listaUF = array_map('strtoupper', $listaUF);
+        $invalid = array_diff($listaUF, $this->estados);
+        if($invalid) {
+            $output->writeln('<error>UF inválidas:</error> '.implode(',', $invalid));
+            return 1;
+        }
         $this->client = new Client();
-        $this->getData();
-        $output->write(json_encode($this->output));
+        if(count($listaUF) > 1) {
+            foreach($listaUF as $UF) {
+                pclose(popen('php bin/consulta-material --uf='.$UF.' &', 'r'));
+            }
+            return;
+        }
+        $this->ProcessUF($listaUF[0]);
     }
 
-    private function getData()
+    private function ProcessUF($estado)
     {
-        $this->fileHandle = fopen('materiais-'.date('ymdhis').'.csv', 'w');
-        fputcsv($this->fileHandle, [
-            'img',
-            'titulo',
-            'descricao',
-            'disponivel',
-            'codigo-item',
-            'marca',
-            'estado',
-            'cidade',
-            'instituicao',
-            'periodo',
-            'lista-nome',
-            'lista-total',
-            'lista-codigo'
-        ]);
-        foreach($this->estados as $estado) {
-            $cidades = $this->getCidade($estado);
-            foreach($cidades as $cidade) {
-                $instituicoes = $this->getInstituicao($estado, $cidade);
-                foreach($instituicoes as $instituicao) {
-                    $periodos = $this->getPeriodo($estado, $cidade, $instituicao);
-                    foreach ($periodos as $periodo) {
-                        $listas = $this->getListaMaterial($estado, $cidade, $instituicao, $periodo);
-                        foreach($listas as $lista) {
-                            $this->writeToCsv(
-                                $estado,
-                                $cidade,
-                                $instituicao,
-                                $periodo,
-                                $lista,
-                                $this->getItens($lista['codigo'])
-                            );
-                        }
+        $this->createCSV($estado);
+        $this->requireCidades($estado);
+        foreach($this->cidades as $cidade) {
+            $this->requireInstituicao($estado, $cidade);
+            foreach($this->instituicoes as $instituicao) {
+                $this->requirePeriodo($estado, $cidade, $instituicao);
+                foreach ($this->periodos as $periodo) {
+                    $this->requireListaMaterial($estado, $cidade, $instituicao, $periodo);
+                    foreach($this->listas as $lista) {
+                        $this->writeToCsv(
+                            $estado,
+                            $cidade,
+                            $instituicao,
+                            $periodo,
+                            $lista,
+                            $this->getItens($lista['codigo'])
+                        );
                     }
                 }
             }
         }
-        fclose($this->fileHandle);
     }
 
-    private function getCidade($estado)
+    private function requireCidades($estado)
     {
         $crawler = $this->client->request('GET',
             'https://www.suryadental.com.br/academico/index/getCidade/?estado='.$estado
         );
-        $cidades = $crawler->filter('option')->each(function ($node) {
+        $this->cidades = $crawler->filter('option')->each(function ($node) {
             return $node->attr('value');
         });
-        return array_filter($cidades, 'strlen');
+        $this->cidades = array_filter($this->cidades, 'strlen');
     }
 
-    private function getInstituicao($estado, $cidade)
+    private function requireInstituicao($estado, $cidade)
     {
         $crawler = $this->client->request('GET',
             'https://www.suryadental.com.br/academico/index/getInstituicao/?'.
@@ -130,13 +130,13 @@ class ConsultaCommand extends Command
                 'estado' => $estado
             ])
         );
-        $cidades = $crawler->filter('option')->each(function ($node) {
+        $this->instituicoes = $crawler->filter('option')->each(function ($node) {
             return $node->attr('value');
         });
-        return array_filter($cidades, 'strlen');
+        $this->instituicoes = array_filter($this->instituicoes, 'strlen');
     }
 
-    private function getPeriodo($estado, $cidade, $instituicao)
+    private function requirePeriodo($estado, $cidade, $instituicao)
     {
         $crawler = $this->client->request('GET',
             'https://www.suryadental.com.br/academico/index/getPeriodo/?'.
@@ -146,13 +146,13 @@ class ConsultaCommand extends Command
                 'estado' => $estado
             ])
         );
-        $instituicoes = $crawler->filter('option')->each(function ($node) {
+        $this->periodos = $crawler->filter('option')->each(function ($node) {
             return $node->attr('value');
         });
-        return array_filter($instituicoes, 'strlen');
+        $this->periodos = array_filter($this->periodos, 'strlen');
     }
 
-    private function getListaMaterial($estado, $cidade, $instituicao, $periodo)
+    private function requireListaMaterial($estado, $cidade, $instituicao, $periodo)
     {
         $this->crawlerListaMaterial = $this->client->request('POST',
             'https://www.suryadental.com.br/academico/lista/',
@@ -163,7 +163,7 @@ class ConsultaCommand extends Command
                 'lista_periodo' => $periodo
             ]
         );
-        $listas = $this->crawlerListaMaterial->filter('li.col-xs-12')->each(function (Crawler $node) {
+        $this->listas = $this->crawlerListaMaterial->filter('li.col-xs-12')->each(function (Crawler $node) {
             $descricaoLista = $node->filter('div')->each(function (Crawler $node, $i) {
                 if($i == 0) {
                     return $node->text();
@@ -180,7 +180,6 @@ class ConsultaCommand extends Command
                 'codigo' => $descricaoLista[3]
             ];
         });
-        return $listas;
     }
     
     private function getItens($codigo)
@@ -206,6 +205,26 @@ class ConsultaCommand extends Command
         });
     }
     
+    private function createCSV($estado)
+    {
+        $this->fileHandle[$estado] = fopen('materiais-'.$estado.'-'.date('ymdhis').'.csv', 'w');
+        fputcsv($this->fileHandle[$estado], [
+            'img',
+            'titulo',
+            'descricao',
+            'disponivel',
+            'codigo-item',
+            'marca',
+            'estado',
+            'cidade',
+            'instituicao',
+            'periodo',
+            'lista-nome',
+            'lista-total',
+            'lista-codigo'
+        ]);
+    }
+    
     private function writeToCsv($estado, $cidade, $instituicao, $periodo, $lista, $itens)
     {
         foreach($itens as $item) {
@@ -216,7 +235,12 @@ class ConsultaCommand extends Command
             $item['lista-nome'] = $lista['nome'];
             $item['lista-total'] = $lista['total'];
             $item['lista-codigo'] = $lista['codigo'];
-            fputcsv($this->fileHandle, $item);
+            fputcsv($this->fileHandle[$estado], $item);
         }
+    }
+
+    public function __destruct()
+    {
+        array_map('fclose', $this->fileHandle);
     }
 }
