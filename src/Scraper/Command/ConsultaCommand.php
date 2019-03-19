@@ -210,7 +210,7 @@ class ConsultaCommand extends Command
     
     private function createCSV($estado)
     {
-        $this->fileHandle[$estado] = fopen('materiais-'.$estado.'-'.date('ymdHis').'.csv', 'w');
+        $this->fileHandle[$estado] = fopen('lista-academica-surya-'.$estado.'-'.date('ymdHis').'.csv', 'w');
         fputcsv($this->fileHandle[$estado], [
             'img',
             'titulo',
