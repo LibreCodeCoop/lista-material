@@ -108,6 +108,9 @@ class ConsultaCommand extends Command
                 }
             }
         }
+        $handle = fopen('log', 'a');
+        fwrite($handle, $estado.','.date('Y-m-d H:i:s'));
+        fclose($handle);
     }
 
     private function requireCidades($estado)
