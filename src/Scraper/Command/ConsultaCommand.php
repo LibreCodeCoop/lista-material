@@ -51,6 +51,7 @@ class ConsultaCommand extends Command
     private $fileHandle = [];
     private $cidades = [];
     private $instituicoes = [];
+    private $separator;
     protected function configure()
     {
         $this
@@ -58,6 +59,9 @@ class ConsultaCommand extends Command
             ->setDescription('Realiza consulta de material escolar.')
             ->setDefinition([
                 new InputOption('uf', null, InputOption::VALUE_REQUIRED + InputOption::VALUE_IS_ARRAY, 'Lista de UF separados por vírgula', $this->estados)
+            ])
+            ->setDefinition([
+                new InputOption('separator', 's', InputOption::VALUE_OPTIONAL, 'Separador de colunas para o CSV, padrão é vírgula', ',')
             ])
             ->setHelp(<<<HELP
                 O comando <info>consulta</info> realiza consulta de empresa.
@@ -68,6 +72,7 @@ class ConsultaCommand extends Command
 
     public function execute(InputInterface $input, OutputInterface $output)
     {
+        $this->separator = $input->getOption('separator');
         $listaUF = $input->getOption('uf');
         $listaUF = array_map('strtoupper', $listaUF);
         $invalid = array_diff($listaUF, $this->estados);
@@ -109,7 +114,7 @@ class ConsultaCommand extends Command
             }
         }
         $handle = fopen('log', 'a');
-        fwrite($handle, $estado.','.date('Y-m-d H:i:s'));
+        fwrite($handle, $estado . ',' . date('Y-m-d H:i:s') . "\n");
         fclose($handle);
     }
 
@@ -211,21 +216,25 @@ class ConsultaCommand extends Command
     private function createCSV($estado)
     {
         $this->fileHandle[$estado] = fopen('lista-academica-surya-'.$estado.'-'.date('ymdHis').'.csv', 'w');
-        fputcsv($this->fileHandle[$estado], [
-            'img',
-            'titulo',
-            'descricao',
-            'disponivel',
-            'codigo-item',
-            'marca',
-            'estado',
-            'cidade',
-            'instituicao',
-            'periodo',
-            'lista-nome',
-            'lista-total',
-            'lista-codigo'
-        ]);
+        fputcsv(
+            $this->fileHandle[$estado],
+            [
+                'img',
+                'titulo',
+                'descricao',
+                'disponivel',
+                'codigo-item',
+                'marca',
+                'estado',
+                'cidade',
+                'instituicao',
+                'periodo',
+                'lista-nome',
+                'lista-total',
+                'lista-codigo'
+            ],
+            $this->separator
+        );
     }
     
     private function writeToCsv($estado, $cidade, $instituicao, $periodo, $lista, $itens)
@@ -238,7 +247,7 @@ class ConsultaCommand extends Command
             $item['lista-nome'] = $lista['nome'];
             $item['lista-total'] = $lista['total'];
             $item['lista-codigo'] = $lista['codigo'];
-            fputcsv($this->fileHandle[$estado], $item);
+            fputcsv($this->fileHandle[$estado], $item, $this->separator);
         }
     }
 
