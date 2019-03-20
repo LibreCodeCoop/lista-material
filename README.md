@@ -54,6 +54,22 @@ Para inicar a importação, execute o seguinte comando:
 php bin/consulta-material
 ```
 
+## Separador de coluna
+
+O separador de coluna pode ser personalizado informando ou , ou ; (vírgula ou
+ponto e vírgula) da seguinte forma:
+
+```
+--separador=,
+```
+ou
+```
+--separador=;
+```
+
+O padrão é vírgula
+
+
 ## Arquivo de log
 
 Após conclusão da importação terá um arquivo chamado log com a sigla da UF e a
